@@ -4,3 +4,6 @@
 
 # Ignore healed_locators.json anywhere
 **/healed_locators.json
+
+# Ignore HTML app file
+aimanager.html
