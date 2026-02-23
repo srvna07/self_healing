@@ -26,14 +26,19 @@ class SelfHealingDriver:
         logger.info("ChromeDriver started")
 
     def find(self, by: str, value: str, semantic_context: str = ""):
+
+        self._driver.implicitly_wait(0)
         try:
             return self._driver.find_element(by, value)
         except (NoSuchElementException, StaleElementReferenceException):
+            logger.warning("Locator failed (%s, %s) — triggering self-healing...", by, value)
             healed = heal(self._driver, by, value, semantic_context or value)
             if healed:
                 healed_by, healed_value = healed
                 return self._driver.find_element(healed_by, healed_value)
             raise
+        finally:
+            self._driver.implicitly_wait(IMPLICIT_WAIT)
 
     def wait_and_find(self, by: str, value: str, semantic_context: str = "", timeout: int = EXPLICIT_WAIT):
         try:
