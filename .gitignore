@@ -1,0 +1,6 @@
+# Ignore .env files anywhere
+**/.env
+**/.env.*
+
+# Ignore healed_locators.json anywhere
+**/healed_locators.json

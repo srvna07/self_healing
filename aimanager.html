@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Money Assistant (Google Gemini API)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script type="module">
+
+const GOOGLE_API_KEY = "AIzaSyDGfr-0GRb8QSRVK5UUMWJtMF90bvik25I";
+const GOOGLE_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+// Query the Google Gemini API
+async function queryGoogleGeminiAPI(prompt) {
+  const body = {
+    contents: [
+      {
+        parts: [
+          { text: prompt }
+        ]
+      }
+    ],
+    generationConfig: {
+      thinkingConfig: {
+        thinkingBudget: 0
+      }
+    }
+  };
+
+  const response = await fetch(`${GOOGLE_API_URL}?key=${GOOGLE_API_KEY}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // Defensive check: ensure candidates and content exist and are string
+  if (!data.candidates || data.candidates.length === 0) {
+    throw new Error("No content received from API");
+  }
+
+  const content = data.candidates[0].content;
+  if (typeof content !== "string") {
+    // Return JSON string for debugging
+    return JSON.stringify(content);
+  }
+
+  return content;
+}
+
+let entries = [];
+
+function renderTable(){
+    const tbody=document.getElementById('entryTable');
+    tbody.innerHTML='';
+    entries.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
+        let tr=document.createElement('tr');
+        let d=document.createElement('td'); d.textContent=e.date;
+        let a=document.createElement('td'); a.textContent=(e.amount>=0?'+ ₹':'- ₹')+Math.abs(e.amount).toLocaleString();
+        a.className=e.amount>=0?'profit':'loss';
+        let n=document.createElement('td'); n.textContent=e.note || '';
+        tr.append(d,a,n); tbody.append(tr);
+    });
+}
+
+function updateTotal(){
+    let total = entries.reduce((s,i)=>s+i.amount,0);
+    let el = document.getElementById('totalDisplay');
+    let totalText = '₹'+Math.abs(total).toLocaleString();
+    el.textContent = (total>=0 ? 'Total: + ' : 'Total: - ') + totalText;
+    el.style.color = total>=0 ? 'var(--profit)' : 'var(--loss)';
+    document.getElementById('chartCenterText').textContent = totalText;
+}
+
+function updateChart(){
+    let profitTotal=entries.filter(e=>e.amount>0).reduce((s,i)=>s+i.amount,0);
+    let lossTotal=Math.abs(entries.filter(e=>e.amount<0).reduce((s,i)=>s+i.amount,0));
+    chart.data.datasets[0].data=[profitTotal,lossTotal];
+    chart.update();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById('aiOutput').textContent = 'AI ready. Click the button for advice.';
+
+  document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+
+  document.getElementById('submitBtn').addEventListener('click',()=>{
+      let d=document.getElementById('dateInput').value;
+      let type=document.getElementById('typeInput').value;
+      let amt=parseFloat(document.getElementById('amountInput').value);
+      let note=document.getElementById('noteInput').value;
+      if(!d||isNaN(amt)){alert('Please enter a valid date and amount');return;}
+      let signedAmt=type==='profit'?amt:-amt;
+      entries.push({date:d,amount:signedAmt,note:note});
+      document.getElementById('amountInput').value='';
+      document.getElementById('noteInput').value='';
+      renderTable();updateTotal();updateChart();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click',()=>{
+      if(confirm('Clear all entries?')){
+          entries = [];
+          renderTable();
+          updateTotal();
+          updateChart();
+      }
+  });
+
+  document.getElementById('adviceBtn').addEventListener('click', async () => {
+  if (entries.length === 0) {
+    alert("Please add some data before requesting advice.");
+    return;
+  }
+  document.getElementById('aiOutput').textContent = 'Thinking...';
+
+  let total = entries.reduce((s, i) => s + i.amount, 0);
+  let summaryLines = entries.map(e => {
+    let sign = e.amount >= 0 ? '+' : '-';
+    return `${e.date}: ${sign}₹${Math.abs(e.amount)} (${e.note || 'no note'})`;
+  });
+  let summary = summaryLines.join('; ');
+
+  // Compose prompt text for Gemini API
+  // Compose prompt text for Gemini API
+let prompt = `Based on this profit and loss performance summary: ${summary}. Total profit/loss: ₹${total}. Please provide 3 clear, actionable suggestions on how to proceed next and 3 important things to avoid, all in 4 lines. Format the response as:\n1. Suggestion one\n2. Suggestion two\n3. Suggestion three\n\nThings to avoid:\n1. Avoid one\n2. Avoid two\n3. Avoid three\n`;
+
+
+  try {
+    const adviceText = await queryGoogleGeminiAPI(prompt);
+
+    // Ensure it's a string
+    const adviceStr = (typeof adviceText === "string") ? adviceText : JSON.stringify(adviceText);
+
+    console.log("API raw response content:", adviceStr);
+
+    // *** Simply display the full response directly without filtering ***
+    document.getElementById('aiOutput').textContent = adviceStr;
+
+  } catch (err) {
+    document.getElementById('aiOutput').textContent = 'Error generating advice: ' + err.message;
+  }
+});
+
+});
+
+const ctx = document.getElementById('plChart').getContext('2d');
+var chart = new Chart(ctx, {
+  type: 'doughnut',
+  data: { labels: ['Profit', 'Loss'], datasets: [{ data: [0,0], backgroundColor: ['#2ecc71', '#e74c3c'], borderWidth:0 }] },
+  options: {
+    responsive:true,
+    cutout:'70%',
+    plugins:{
+      legend:{ position:'bottom', labels:{ font:{ size:14 } } },
+      tooltip:{ callbacks:{
+        label:function(context){
+          let val=context.parsed;
+          let total=context.chart._metasets[context.datasetIndex].total;
+          let pct=((val/total)*100).toFixed(1)+'%';
+          return context.label+': ₹'+val.toLocaleString()+' ('+pct+')';
+        }
+      }}
+    }
+  }
+});
+</script>
+<style>
+  :root{
+    --bg:#f4f6f9;
+    --card:rgba(255,255,255,0.85);
+    --accent:#4facfe;
+    --accent2:#00f2fe;
+    --profit:#2ecc71;
+    --loss:#e74c3c;
+    --text:#1e293b;
+  }
+  body{
+    margin:0;
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+  }
+  header{
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    color:#fff;
+    padding:18px 24px;
+    font-weight:700;
+    font-size:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .container{
+    max-width:980px;
+    margin:24px auto;
+    padding:0 14px;
+  }
+  .total{
+    margin:20px 0;
+    text-align:center;
+    font-size:22px;
+    font-weight:800;
+    color:var(--profit);
+  }
+  .controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+    margin-bottom:16px;
+    background:var(--card);
+    padding:14px;
+    border-radius:12px;
+  }
+  .controls input, .controls select{
+    padding:10px;
+    border-radius:8px;
+    border:1px solid #d1d5db;
+    min-width:150px;
+    font-size:14px;
+  }
+  .controls button{
+    padding:10px 16px;
+    border-radius:8px;
+    border:none;
+    background:linear-gradient(135deg,#3ea0f8,#2f86d6);
+    color:#fff;
+    cursor:pointer;
+    font-weight:700;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    background:var(--card);
+    border-radius:10px;
+    overflow:hidden;
+  }
+  th,td{
+    padding:12px;
+    border-bottom:1px solid rgba(0,0,0,0.05);
+    font-size:14px;
+  }
+  thead th{
+    background:rgba(240,242,245,0.9);
+    font-weight:800;
+  }
+  tbody tr:hover{
+    background:rgba(0,0,0,0.03);
+  }
+  .profit{color:var(--profit);font-weight:700}
+  .loss{color:var(--loss);font-weight:700}
+  .chart-wrap{
+    background:var(--card);
+    padding:16px;
+    border-radius:12px;
+    height:320px;
+    position:relative;
+  }
+  .chart-center{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    font-weight:800;
+    font-size:18px;
+    text-align:center;
+    pointer-events:none;
+  }
+  .ai-section{
+    background:var(--card);
+    padding:14px;
+    border-radius:12px;
+  }
+  .ai-section h3{
+    margin-top:0;
+    font-size:16px;
+    font-weight:700;
+  }
+  .ai-output{
+    white-space:pre-wrap;
+    font-size:14px;
+    line-height:1.5;
+    min-height: 120px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>📈 AI Money Assistant </div>
+  <div style="font-size:14px;opacity:0.85">AI Enabled • Smart • Simple • Visual</div>
+</header>
+
+<div class="container">
+  <div class="total" id="totalDisplay">Total: ₹0</div>
+
+  <div class="controls">
+    <input id="dateInput" type="date" />
+    <select id="typeInput">
+      <option value="profit">Profit</option>
+      <option value="loss">Loss</option>
+    </select>
+    <input id="amountInput" type="number" placeholder="Amount" />
+    <input id="noteInput" type="text" placeholder="Note (optional)" />
+    <button id="submitBtn">Submit</button>
+    <button id="clearBtn" style="background:#fff;border:1px solid #ccc;color:#000">Clear</button>
+  </div>
+
+  <table>
+    <thead><tr><th>Date</th><th>Profit/Loss</th><th>Notes</th></tr></thead>
+    <tbody id="entryTable"></tbody>
+  </table>
+
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-top:18px;flex-wrap:wrap;">
+    <div class="chart-wrap" style="flex:1;min-width:300px;">
+      <canvas id="plChart"></canvas>
+      <div class="chart-center" id="chartCenterText">₹0</div>
+    </div>
+
+    <div class="ai-section" style="flex:1;min-width:280px;">
+      <h3>AI Advice</h3>
+      <div class="ai-output" id="aiOutput">Loading AI ready...</div>
+      <button id="adviceBtn" style="margin-top:10px;padding:10px 16px;border:none;border-radius:8px;background:linear-gradient(135deg,#34d399,#059669);color:#fff;font-weight:700;cursor:pointer;">💡 Get AI Advice</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
