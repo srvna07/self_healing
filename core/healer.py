@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 HEALED_LOG = os.path.join(os.path.dirname(__file__), "..", "healed_locators.json")
 GEMINI_MAX_RETRIES = 4
 GEMINI_RETRY_DELAY = 5
-CONFIDENCE_THRESHOLD = 65
+CONFIDENCE_THRESHOLD = 80
 
 
 def _gemini_url() -> str:
